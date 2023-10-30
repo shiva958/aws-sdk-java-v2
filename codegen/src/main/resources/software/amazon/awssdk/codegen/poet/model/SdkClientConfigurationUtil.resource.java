@@ -68,7 +68,7 @@ public final class SdkClientConfigurationUtil {
         setClientListOption(builder, SdkClientOption.METRIC_PUBLISHERS, overrides.metricPublishers());
         setClientOption(builder, SdkAdvancedClientOption.TOKEN_SIGNER,
                         overrides.advancedOption(SdkAdvancedClientOption.TOKEN_SIGNER));
-        setClientOption(builder, SdkClientOption.COMPRESSION_CONFIGURATION, overrides.compressionConfiguration());
+        setClientOption(builder, SdkClientOption.CONFIGURED_COMPRESSION_CONFIGURATION, overrides.compressionConfiguration());
 
         return builder;
     }
