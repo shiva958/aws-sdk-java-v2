@@ -27,7 +27,6 @@ import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.SdkHttpRequest;
-import software.amazon.awssdk.http.auth.spi.scheme.AuthScheme;
 import software.amazon.awssdk.http.auth.spi.signer.AsyncSignRequest;
 import software.amazon.awssdk.http.auth.spi.signer.AsyncSignedRequest;
 import software.amazon.awssdk.http.auth.spi.signer.HttpSigner;
@@ -38,8 +37,6 @@ import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.identity.spi.IdentityProviders;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.s3express.S3ExpressAuthScheme;
-import software.amazon.awssdk.services.s3.s3express.S3ExpressHttpSigner;
-import software.amazon.awssdk.services.s3.s3express.S3ExpressIdentityProvider;
 import software.amazon.awssdk.services.s3.s3express.S3ExpressSessionCredentials;
 
 public class S3ExpressAuthSchemeTest {
@@ -68,8 +65,9 @@ public class S3ExpressAuthSchemeTest {
     @Test
     void customS3ExpressAuthScheme() {
         List<String> headersToExclude = Arrays.asList("header1", "header2", "header3");
-        ExcludeHeadersSigner signer = new ExcludeHeadersSigner(S3ExpressHttpSigner.create(), headersToExclude);
-        S3ExpressAuthScheme x = new CustomS3ExpressAuthScheme(signer);
+        S3ExpressAuthScheme s3ExpressAuthScheme = S3ExpressAuthScheme.create();
+        ExcludeHeadersSigner signer = new ExcludeHeadersSigner(s3ExpressAuthScheme.signer(), headersToExclude);
+        S3ExpressAuthScheme x = new CustomS3ExpressAuthScheme(signer, s3ExpressAuthScheme);
 
         S3Client client = S3Client.builder()
                                   .putAuthScheme(x)
@@ -79,11 +77,11 @@ public class S3ExpressAuthSchemeTest {
         client.putObject(r -> r.bucket("bucket").key("key"), RequestBody.fromString("test"));
     }
 
-    static class ExcludeHeadersSigner implements S3ExpressHttpSigner {
-        private final S3ExpressHttpSigner delegateSigner;
+    static class ExcludeHeadersSigner implements HttpSigner<S3ExpressSessionCredentials> {
+        private final HttpSigner<S3ExpressSessionCredentials> delegateSigner;
         private List<String> excludedHeaders;
 
-        ExcludeHeadersSigner(S3ExpressHttpSigner delegateSigner, List<String> excludedHeaders) {
+        ExcludeHeadersSigner(HttpSigner<S3ExpressSessionCredentials> delegateSigner, List<String> excludedHeaders) {
             this.delegateSigner = delegateSigner;
             this.excludedHeaders = excludedHeaders;
         }
@@ -121,12 +119,12 @@ public class S3ExpressAuthSchemeTest {
     }
 
     static class CustomS3ExpressAuthScheme implements S3ExpressAuthScheme {
-        private final S3ExpressHttpSigner signer;
+        private final HttpSigner<S3ExpressSessionCredentials> signer;
         private final S3ExpressAuthScheme defaultScheme;
 
-        CustomS3ExpressAuthScheme(S3ExpressHttpSigner signer) {
+        CustomS3ExpressAuthScheme(HttpSigner<S3ExpressSessionCredentials> signer, S3ExpressAuthScheme defaultScheme) {
             this.signer = signer;
-            this.defaultScheme = S3ExpressAuthScheme.create();
+            this.defaultScheme = defaultScheme;
         }
 
         @Override
@@ -135,7 +133,7 @@ public class S3ExpressAuthSchemeTest {
         }
 
         @Override
-        public S3ExpressHttpSigner signer() {
+        public HttpSigner<S3ExpressSessionCredentials> signer() {
             return signer;
         }
 
