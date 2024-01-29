@@ -26,7 +26,6 @@ import static software.amazon.awssdk.http.auth.aws.internal.signer.util.SignerCo
 import static software.amazon.awssdk.http.auth.aws.internal.signer.util.SignerConstant.X_AMZ_TRAILER;
 import static software.amazon.awssdk.http.auth.aws.internal.signer.util.SignerUtils.moveContentLength;
 
-import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

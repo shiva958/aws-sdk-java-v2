@@ -184,6 +184,7 @@ public final class ChunkedEncodedInputStream extends InputStream {
     private ByteArrayInputStream createHeaderStream(ByteBuffer chunkData) {
         return new ByteArrayInputStream(header.get(chunkData));
     }
+
     private LengthAwareSequenceInputStream createExtensionsStream(ByteBuffer chunkData) {
         LengthAwareSequenceInputStream.Builder result = LengthAwareSequenceInputStream.builder();
         for (ChunkExtensionProvider chunkExtensionProvider : extensions) {
@@ -208,7 +209,7 @@ public final class ChunkedEncodedInputStream extends InputStream {
             }
 
             // Replace trailing comma with clrf
-            result.streams.set(result.streams.size() - 1, new ByteArrayInputStream(CRLF));
+            result.replaceLast(new ByteArrayInputStream(CRLF), COMMA.length);
         }
         return result.build();
     }
@@ -316,6 +317,13 @@ public final class ChunkedEncodedInputStream extends InputStream {
             public Builder add(LengthAwareSequenceInputStream stream) {
                 streams.add(stream);
                 size += stream.size;
+                return this;
+            }
+
+            public Builder replaceLast(ByteArrayInputStream stream, int lastLength) {
+                streams.set(streams.size() - 1, stream);
+                size -= lastLength;
+                size += stream.available();
                 return this;
             }
 

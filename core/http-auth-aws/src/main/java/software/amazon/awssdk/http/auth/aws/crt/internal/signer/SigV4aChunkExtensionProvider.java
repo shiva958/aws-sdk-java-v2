@@ -15,7 +15,6 @@
 
 package software.amazon.awssdk.http.auth.aws.crt.internal.signer;
 
-import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import software.amazon.awssdk.annotations.SdkInternalApi;

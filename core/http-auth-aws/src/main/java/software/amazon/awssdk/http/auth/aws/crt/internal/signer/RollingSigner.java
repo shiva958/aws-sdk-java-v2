@@ -15,7 +15,6 @@
 
 package software.amazon.awssdk.http.auth.aws.crt.internal.signer;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.List;
@@ -95,7 +94,7 @@ public final class RollingSigner {
     private static class ByteBufferBackedInputStream extends InputStream {
         private final ByteBuffer buf;
 
-        public ByteBufferBackedInputStream(ByteBuffer buf) {
+        private ByteBufferBackedInputStream(ByteBuffer buf) {
             this.buf = buf;
         }
 
