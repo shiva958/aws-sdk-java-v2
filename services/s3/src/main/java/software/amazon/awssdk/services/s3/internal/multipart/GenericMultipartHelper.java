@@ -126,6 +126,7 @@ public final class GenericMultipartHelper<RequestT extends S3Request, ResponseT 
 
     public void cleanUpParts(String uploadId, AbortMultipartUploadRequest.Builder abortMultipartUploadRequest) {
         log.debug(() -> "Aborting multipart upload: " + uploadId);
+        System.out.println("ABORTING MPU");
         AbortMultipartUploadRequest request = abortMultipartUploadRequest.uploadId(uploadId).build();
         s3AsyncClient.abortMultipartUpload(request)
                      .exceptionally(throwable -> {

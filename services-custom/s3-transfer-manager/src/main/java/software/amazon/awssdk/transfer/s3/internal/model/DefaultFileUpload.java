@@ -15,35 +15,81 @@
 
 package software.amazon.awssdk.transfer.s3.internal.model;
 
+import java.io.File;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.services.s3.internal.multipart.PauseObservable;
+import software.amazon.awssdk.services.s3.internal.multipart.S3ResumeToken;
 import software.amazon.awssdk.transfer.s3.model.CompletedFileUpload;
 import software.amazon.awssdk.transfer.s3.model.FileUpload;
 import software.amazon.awssdk.transfer.s3.model.ResumableFileUpload;
 import software.amazon.awssdk.transfer.s3.model.UploadFileRequest;
 import software.amazon.awssdk.transfer.s3.progress.TransferProgress;
+import software.amazon.awssdk.utils.Lazy;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.Validate;
 
 @SdkInternalApi
 public final class DefaultFileUpload implements FileUpload {
+    private final Lazy<ResumableFileUpload> resumableFileUpload;
     private final CompletableFuture<CompletedFileUpload> completionFuture;
     private final TransferProgress progress;
     private final UploadFileRequest request;
+    private final PauseObservable pauseObservable;
 
     public DefaultFileUpload(CompletableFuture<CompletedFileUpload> completionFuture,
                              TransferProgress progress,
+                             PauseObservable pauseObservable,
                              UploadFileRequest request) {
         this.completionFuture = Validate.paramNotNull(completionFuture, "completionFuture");
         this.progress = Validate.paramNotNull(progress, "progress");
+        this.pauseObservable = Validate.paramNotNull(pauseObservable, "pauseObservable");
         this.request = Validate.paramNotNull(request, "request");
+        this.resumableFileUpload = new Lazy<>(this::doPause);
     }
 
     @Override
     public ResumableFileUpload pause() {
-        throw new UnsupportedOperationException("Pausing an upload is not supported in a non CRT-based S3 Client. For "
-                                                + "upload pause support, pass an AWS CRT-based S3 client to S3TransferManager"
-                                                + "instead: S3AsyncClient.crtBuilder().build();");
+        return resumableFileUpload.getValue();
+    }
+
+    private ResumableFileUpload doPause() {
+        File sourceFile = request.source().toFile();
+        Instant fileLastModified = Instant.ofEpochMilli(sourceFile.lastModified());
+
+        if (completionFuture.isDone()) {
+            System.out.println("Paused but was Done already");
+            return ResumableFileUpload.builder()
+                                      .fileLastModified(fileLastModified)
+                                      .fileLength(sourceFile.length())
+                                      .uploadFileRequest(request)
+                                      .build();
+        }
+
+        S3ResumeToken token = null;
+        try {
+            token = pauseObservable.pause();
+        } catch (Exception e) {
+            //
+        }
+
+        // Upload hasn't started yet, or it's a single object upload
+        if (token == null) {
+            return ResumableFileUpload.builder()
+                                      .fileLastModified(fileLastModified)
+                                      .fileLength(sourceFile.length())
+                                      .uploadFileRequest(request)
+                                      .build();
+        }
+
+        return ResumableFileUpload.builder()
+                                  .s3ResumeToken(token)
+                                  .fileLastModified(fileLastModified)
+                                  .fileLength(sourceFile.length())
+                                  .uploadFileRequest(request)
+                                  .multipartUploadId(token.uploadId())
+                                  .build();
     }
 
     @Override
@@ -67,6 +113,12 @@ public final class DefaultFileUpload implements FileUpload {
 
         DefaultFileUpload that = (DefaultFileUpload) o;
 
+        if (!resumableFileUpload.equals(that.resumableFileUpload)) {
+            return false;
+        }
+        if (!pauseObservable.equals(that.pauseObservable)) {
+            return false;
+        }
         if (!completionFuture.equals(that.completionFuture)) {
             return false;
         }
@@ -78,7 +130,9 @@ public final class DefaultFileUpload implements FileUpload {
 
     @Override
     public int hashCode() {
-        int result = completionFuture.hashCode();
+        int result = resumableFileUpload.hashCode();
+        result = 31 * result + pauseObservable.hashCode();
+        result = 31 * result + completionFuture.hashCode();
         result = 31 * result + progress.hashCode();
         result = 31 * result + request.hashCode();
         return result;

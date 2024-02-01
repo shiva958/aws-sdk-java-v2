@@ -34,6 +34,7 @@ public interface FileUpload extends ObjectTransfer {
      * See {@link ResumableFileUpload} for supported formats.
      * 
      * <p>
+     *     TODO - update
      * Currently, it's only supported if the underlying {@link S3AsyncClient} is CRT-based (created via
      * {@link S3AsyncClient#crtBuilder()} or {@link S3AsyncClient#crtCreate()}).
      * It will throw {@link UnsupportedOperationException} if the {@link S3TransferManager} is created

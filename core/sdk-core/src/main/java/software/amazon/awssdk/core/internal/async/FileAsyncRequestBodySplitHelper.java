@@ -103,6 +103,7 @@ public final class FileAsyncRequestBodySplitHelper {
         while (shouldSendMore()) {
             AsyncRequestBody currentAsyncRequestBody = newFileAsyncRequestBody(simplePublisher);
             simplePublisher.send(currentAsyncRequestBody);
+            //System.out.println("sending AsyncRequestBody");
             numAsyncRequestBodiesInFlight.incrementAndGet();
             checkCompletion(simplePublisher, currentAsyncRequestBody);
         }
@@ -112,6 +113,7 @@ public final class FileAsyncRequestBodySplitHelper {
         long remaining = remainingBytes.addAndGet(-currentAsyncRequestBody.contentLength().get());
 
         if (remaining == 0) {
+            System.out.println("remainingBytes == 0, MPU done");
             isDone = true;
             simplePublisher.complete();
         } else if (remaining < 0) {
@@ -122,6 +124,7 @@ public final class FileAsyncRequestBodySplitHelper {
     }
 
     private void startNextRequestBody(SimplePublisher<AsyncRequestBody> simplePublisher) {
+        System.out.println("previous uploadPart completed, sending next one");
         numAsyncRequestBodiesInFlight.decrementAndGet();
         sendAsyncRequestBody(simplePublisher);
     }
@@ -167,6 +170,8 @@ public final class FileAsyncRequestBodySplitHelper {
 
         @Override
         public void subscribe(Subscriber<? super ByteBuffer> s) {
+            // never get here when resuming
+            System.out.println("In -> FileAsyncRequestBodySplitHelper :: subscribe()");
             fileAsyncRequestBody.doAfterOnComplete(() -> startNextRequestBody(simplePublisher))
                                 // The reason we still need to call startNextRequestBody when the subscription is
                                 // cancelled is that upstream could cancel the subscription even though the stream has

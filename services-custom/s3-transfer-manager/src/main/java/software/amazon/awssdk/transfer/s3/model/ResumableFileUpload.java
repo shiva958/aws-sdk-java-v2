@@ -31,6 +31,7 @@ import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.s3.internal.multipart.S3ResumeToken;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.transfer.s3.S3TransferManager;
 import software.amazon.awssdk.transfer.s3.config.TransferRequestOverrideConfiguration;
@@ -64,15 +65,20 @@ public final class ResumableFileUpload implements ResumableTransfer,
     private final Long totalParts;
     private final long fileLength;
     private final Long transferredParts;
+    private S3ResumeToken s3ResumeToken;
 
     private ResumableFileUpload(DefaultBuilder builder) {
         this.uploadFileRequest = Validate.paramNotNull(builder.uploadFileRequest, "uploadFileRequest");
         this.fileLastModified = Validate.paramNotNull(builder.fileLastModified, "fileLastModified");
         this.fileLength = Validate.paramNotNull(builder.fileLength, "fileLength");
+        // CRT S3Client fields
         this.multipartUploadId = builder.multipartUploadId;
         this.totalParts = builder.totalParts;
         this.partSizeInBytes = builder.partSizeInBytes;
         this.transferredParts = builder.transferredParts;
+        // Java S3Client field
+        // TODO - can resume a CRT TM paused upload with Java TM (only uploadId is needed), but not vice-versa
+        this.s3ResumeToken = builder.s3ResumeToken;
     }
 
     @Override
@@ -118,6 +124,7 @@ public final class ResumableFileUpload implements ResumableTransfer,
         result = 31 * result + (totalParts != null ? totalParts.hashCode() : 0);
         result = 31 * result + (transferredParts != null ? transferredParts.hashCode() : 0);
         result = 31 * result + (int) (fileLength ^ (fileLength >>> 32));
+        result = 31 * result + (s3ResumeToken != null ? s3ResumeToken.hashCode() : 0);
         return result;
     }
 
@@ -174,6 +181,10 @@ public final class ResumableFileUpload implements ResumableTransfer,
      */
     public OptionalLong transferredParts() {
         return transferredParts == null ? OptionalLong.empty() : OptionalLong.of(transferredParts);
+    }
+
+    public Optional<S3ResumeToken> s3ResumeToken() {
+        return s3ResumeToken == null ? Optional.empty() : Optional.of(s3ResumeToken);
     }
 
     @Override
@@ -340,6 +351,13 @@ public final class ResumableFileUpload implements ResumableTransfer,
          * @return a reference to this object so that method calls can be chained together.
          */
         Builder partSizeInBytes(Long partSizeInBytes);
+
+        /**
+         *
+         * @param s3ResumeToken
+         * @return
+         */
+        Builder s3ResumeToken(S3ResumeToken s3ResumeToken);
     }
 
     private static final class DefaultBuilder implements Builder {
@@ -352,6 +370,7 @@ public final class ResumableFileUpload implements ResumableTransfer,
         private Long fileLength;
 
         private Long transferredParts;
+        private S3ResumeToken s3ResumeToken;
 
         private DefaultBuilder() {
         }
@@ -364,6 +383,7 @@ public final class ResumableFileUpload implements ResumableTransfer,
             this.totalParts = persistableFileUpload.totalParts;
             this.fileLength = persistableFileUpload.fileLength;
             this.transferredParts = persistableFileUpload.transferredParts;
+            this.s3ResumeToken = persistableFileUpload.s3ResumeToken;
         }
 
         @Override
@@ -406,6 +426,12 @@ public final class ResumableFileUpload implements ResumableTransfer,
         @Override
         public Builder partSizeInBytes(Long partSizeInBytes) {
             this.partSizeInBytes = partSizeInBytes;
+            return this;
+        }
+
+        @Override
+        public Builder s3ResumeToken(S3ResumeToken s3ResumeToken) {
+            this.s3ResumeToken = s3ResumeToken;
             return this;
         }
 

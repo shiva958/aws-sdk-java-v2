@@ -16,14 +16,21 @@
 package software.amazon.awssdk.transfer.s3;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static software.amazon.awssdk.testutils.service.S3BucketUtils.temporaryBucketName;
 import static software.amazon.awssdk.transfer.s3.SizeConstant.MB;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.List;
+import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import org.junit.jupiter.api.AfterAll;
@@ -33,8 +40,10 @@ import software.amazon.awssdk.core.retry.backoff.FixedDelayBackoffStrategy;
 import software.amazon.awssdk.core.waiters.AsyncWaiter;
 import software.amazon.awssdk.core.waiters.Waiter;
 import software.amazon.awssdk.core.waiters.WaiterAcceptor;
+import software.amazon.awssdk.services.s3.internal.multipart.S3ResumeToken;
 import software.amazon.awssdk.services.s3.model.ListMultipartUploadsResponse;
 import software.amazon.awssdk.services.s3.model.ListPartsResponse;
+import software.amazon.awssdk.services.s3.model.MultipartUpload;
 import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
 import software.amazon.awssdk.testutils.RandomTempFile;
 import software.amazon.awssdk.transfer.s3.model.FileUpload;
@@ -45,29 +54,159 @@ import software.amazon.awssdk.utils.Logger;
 
 public class S3TransferManagerUploadPauseResumeIntegrationTest extends S3IntegrationTestBase {
     private static final Logger log = Logger.loggerFor(S3TransferManagerUploadPauseResumeIntegrationTest.class);
-    private static final String BUCKET = temporaryBucketName(S3TransferManagerUploadPauseResumeIntegrationTest.class);
+    private static final String BUCKET = "s3transfermanageruploadpauseresumeintegration-hdavidh-8870";//temporaryBucketName(S3TransferManagerUploadPauseResumeIntegrationTest.class);
     private static final String KEY = "key";
     // 24 * MB is chosen to make sure we have data written in the file already upon pausing.
-    private static final long OBJ_SIZE = 24 * MB;
+    //private static final long OBJ_SIZE = 24 * MB;
     private static File largeFile;
     private static File smallFile;
     private static ScheduledExecutorService executorService;
 
+    //static final String fileName = "50MBFile.txt";
+    static final String fileName = "200MBFile.txt";
+    static final Path filePath = Paths.get(fileName);
+
     @BeforeAll
     public static void setup() throws Exception {
-        createBucket(BUCKET);
-        largeFile = new RandomTempFile(OBJ_SIZE);
+        //createBucket(BUCKET);
+
+        if (!Files.exists(filePath)) {
+            fillFileWithRandomContent(OBJ_SIZE);
+        }
+
+        largeFile = new File(fileName);
+        //largeFile = new RandomTempFile(OBJ_SIZE);
+
         smallFile = new RandomTempFile(2 * MB);
         executorService = Executors.newScheduledThreadPool(3);
     }
 
+    private static void generateRandomContent(FileChannel fileChannel, long fileSize) throws IOException {
+        Random random = new Random();
+        ByteBuffer buffer = ByteBuffer.allocate(1024);
+
+        while (fileChannel.size() < fileSize) {
+            random.nextBytes(buffer.array());
+            buffer.rewind();
+            fileChannel.write(buffer);
+        }
+    }
+
+    private static void fillFileWithRandomContent(long objSize) {
+        try {
+            FileChannel fileChannel = FileChannel.open(filePath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            generateRandomContent(fileChannel, objSize);
+            fileChannel.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     @AfterAll
     public static void cleanup() {
-        deleteBucketAndAllContents(BUCKET);
-        largeFile.delete();
+        //deleteBucketAndAllContents(BUCKET);
+        //largeFile.delete();
         smallFile.delete();
         executorService.shutdown();
     }
+
+    // 50 MB - 7 Parts - 1:14
+    // 75 MB - 9 Parts - 1:52
+    //private static final long OBJ_SIZE = 50 * MB;
+    @Test
+    public void javaBasedTM() throws InterruptedException {
+        UploadFileRequest request = UploadFileRequest.builder()
+                                                     .putObjectRequest(b -> b.bucket(BUCKET).key(KEY))
+                                                     .source(largeFile)
+                                                     .build();
+        FileUpload fileUpload = tmJava.uploadFile(request);
+
+        fileUpload.completionFuture().join();
+
+        Thread.sleep(33000);
+
+        ResumableFileUpload resumableFileUpload = fileUpload.pause();
+
+        S3ResumeToken s3ResumeToken = resumableFileUpload.s3ResumeToken().get();
+
+        System.out.println("Resume Token -> uploadId :" + s3ResumeToken.uploadId());
+
+        //Thread.sleep(25000);
+
+        listParts(s3ResumeToken.uploadId());
+
+        FileUpload fileUpload2 = tmJava.resumeUploadFile(resumableFileUpload);
+        fileUpload2.completionFuture().join();
+    }
+
+    // office fast internet
+    // 200 MB - 25 parts - 20 secs
+    private static final long OBJ_SIZE = 200 * MB;
+    @Test
+    public void uploadFewPartsAndPause() throws InterruptedException, IOException {
+        UploadFileRequest request = UploadFileRequest.builder()
+                                                     .putObjectRequest(b -> b.bucket(BUCKET).key(KEY))
+                                                     .source(largeFile)
+                                                     .build();
+        FileUpload fileUpload = tmJava.uploadFile(request);
+
+        // let some uploadParts() complete
+        Thread.sleep(1000);
+
+        ResumableFileUpload resumableFileUpload = fileUpload.pause();
+
+        System.out.println("Is ResumeToken present?  " + resumableFileUpload.s3ResumeToken().isPresent());
+
+        File f = new File("pausedUpload");
+        if (!f.exists()) {
+            f.createNewFile();
+        }
+        resumableFileUpload.serializeToFile(Paths.get("pausedUpload"));
+
+        // keep running to make sure the upload doesn't complete after pausing
+        Thread.sleep(10000);
+    }
+
+    boolean abort = true;
+    @Test
+    public void listMPU() {
+        ListMultipartUploadsResponse response = s3Async.listMultipartUploads(r -> r.bucket(BUCKET)).join();
+        List<MultipartUpload> uploads = response.uploads();
+        System.out.println("Number of MPU in progress --->  " + uploads.size());
+        int upNum = 1;
+        for (MultipartUpload mpu : uploads) {
+            System.out.println("Upload #" + upNum++);
+            System.out.println(mpu);
+
+            System.out.println();
+            ListPartsResponse listParts = s3Async.listParts(p -> p.key(KEY).bucket(BUCKET).uploadId(mpu.uploadId())).join();
+            System.out.println("Next Part Number Marker:");
+            System.out.println(listParts.nextPartNumberMarker());
+
+            if (abort) {
+                s3Async.abortMultipartUpload(a -> a.bucket(BUCKET).uploadId(mpu.uploadId()).key(KEY)).join();
+            }
+        }
+    }
+
+    @Test
+    public void resume() {
+        ResumableFileUpload resumableFileUpload = ResumableFileUpload.fromFile(Paths.get("pausedUpload"));
+        //System.out.println(resumableFileUpload.multipartUploadId().get());
+        FileUpload fileUpload2 = tmJava.resumeUploadFile(resumableFileUpload);
+        fileUpload2.completionFuture().join();
+    }
+
+    public void listParts(String uploadId) {
+        //String uploadId = "Fg6UdgVFiLTu3bzg5RK0xE09qxw4NLPZHoskQISwg5OJt0jE0IbjVh9BMiF7DN18LdQJh2aSIXzZSrqcJm8KnnUKUoD0JHt3UhnfFgh.o3OoJr1A4PyNPPAkWAiFCgkxZ4nHhG8zfYRs7c3I2fLysA--";
+        ListPartsResponse listParts = s3Async.listParts(p -> p.key(KEY).bucket(BUCKET).uploadId(uploadId)).join();
+        System.out.println("Next Part Number Marker:");
+        System.out.println(listParts.nextPartNumberMarker());
+        System.out.println("Listing parts");
+        System.out.println(listParts.parts());
+    }
+
+    /////////////////////
 
     @Test
     void pause_singlePart_shouldResume() {

@@ -19,6 +19,7 @@ import java.io.File;
 import java.nio.file.Path;
 import java.time.Instant;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.transfer.s3.model.ResumableFileUpload;
 
 @SdkInternalApi
 public final class FileUtils {
@@ -38,4 +39,13 @@ public final class FileUtils {
         return fileLastModified.equals(recordedFileLastModified)
                && recordedFileContentLength == file.length();
     }
+
+    public static boolean fileModified(ResumableFileUpload resumableFileUpload) {
+
+        // combine with above method?
+        // TODO -> for Resume w/ Java-Based Client
+
+        return false;
+    }
+
 }
