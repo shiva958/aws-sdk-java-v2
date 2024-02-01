@@ -1,3 +1,4 @@
+ #### 👋 _Looking for changelogs for older versions? You can find them in the [changelogs](./changelogs) directory._
 # __2.23.15__ __2024-01-31__
 ## __AWS CloudFormation__
   - ### Features
@@ -401,3 +402,4 @@ Special thanks to the following contributors to this release:
 ## __Redshift Serverless__
   - ### Features
     - Updates to ConfigParameter for RSS workgroup, removal of use_fips_ssl
+
